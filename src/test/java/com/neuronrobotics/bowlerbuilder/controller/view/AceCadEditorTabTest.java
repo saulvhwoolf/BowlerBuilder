@@ -24,10 +24,10 @@ public class AceCadEditorTabTest extends AutoClosingApplicationTest {
   void basicTest() throws Exception {
     FxUtil.runFX(() ->
         tab.getController().getScriptEditor().insertAtCursor("return new Cube(1,1,1).toCSG();"));
-    Object result = FxUtil.returnFX(() -> tab.getController().getScriptRunner().runScript(
+    Object result = FxUtil.returnFX(() -> tab.getController().getScriptRunner("Groovy").runScript(
         tab.getController().getScriptEditor().getText(),
         new ArrayList<>(),
-        "AwareGroovy"
+        "BowlerGroovy"
     ));
 
     assertTrue(result instanceof CSG);

@@ -1,10 +1,8 @@
 package com.neuronrobotics.bowlerbuilder.controller.scripteditor.groovy;
 
-import com.neuronrobotics.bowlerbuilder.LoggerUtilities;
 import com.neuronrobotics.bowlerbuilder.controller.scripteditor.groovy.ast.GroovyTreeTransformation;
 import com.neuronrobotics.bowlerbuilder.model.tree.groovy.ast.ASTNode;
 import com.neuronrobotics.bowlerstudio.scripting.GroovyHelper;
-import com.neuronrobotics.bowlerstudio.scripting.IDebugScriptRunner;
 import com.neuronrobotics.bowlerstudio.scripting.IScriptingLanguage;
 import com.neuronrobotics.bowlerstudio.scripting.ScriptingEngine;
 import com.neuronrobotics.sdk.common.BowlerAbstractDevice;
@@ -14,8 +12,7 @@ import groovy.lang.GroovyShell;
 import groovy.lang.Script;
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.logging.Logger;
+import java.util.Collections;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -26,21 +23,19 @@ import org.codehaus.groovy.control.customizers.ImportCustomizer;
 /**
  * Simple copy of {@link GroovyHelper} that keeps a flag for when it is compiling or running.
  */
-public class AwareGroovyLanguage implements IScriptingLanguage {
+public class GroovyLanguage implements IScriptingLanguage {
 
-  private static final Logger logger
-      = LoggerUtilities.getLogger(AwareGroovyLanguage.class.getSimpleName());
   private final BooleanProperty compilingProperty;
   private final BooleanProperty runningProperty;
 
-  public AwareGroovyLanguage() {
+  public GroovyLanguage() {
     compilingProperty = new SimpleBooleanProperty(false);
     runningProperty = new SimpleBooleanProperty(false);
   }
 
   @Override
   public String getShellType() {
-    return "AwareGroovy";
+    return "BowlerGroovy";
   }
 
   @Override
@@ -60,64 +55,68 @@ public class AwareGroovyLanguage implements IScriptingLanguage {
 
   @Override
   public ArrayList<String> getFileExtenetion() {
-    return new ArrayList<>(Arrays.asList("java", "groovy"));
+    return new ArrayList<>(Collections.singletonList("groovy"));
   }
 
   private Object inline(Object code, ArrayList<Object> args) throws Exception {
-    compilingProperty.setValue(true);
+    try {
+      compilingProperty.setValue(true);
 
-    CompilerConfiguration cc = new CompilerConfiguration();
-    cc.addCompilationCustomizers(new ImportCustomizer()
-        .addStarImports(ScriptingEngine.getImports())
-        .addStaticStars(
-            "com.neuronrobotics.sdk.util.ThreadUtil",
-            "eu.mihosoft.vrl.v3d.Transform",
-            "com.neuronrobotics.bowlerstudio.vitamins.Vitamins"));
-    GroovyTreeTransformation transformation = new GroovyTreeTransformation();
-    cc.addCompilationCustomizers(new ASTTransformationCustomizer(transformation));
+      CompilerConfiguration cc = new CompilerConfiguration();
+      cc.addCompilationCustomizers(new ImportCustomizer()
+          .addStarImports(ScriptingEngine.getImports())
+          .addStaticStars(
+              "com.neuronrobotics.sdk.util.ThreadUtil",
+              "eu.mihosoft.vrl.v3d.Transform",
+              "com.neuronrobotics.bowlerstudio.vitamins.Vitamins"));
+      GroovyTreeTransformation transformation = new GroovyTreeTransformation();
+      cc.addCompilationCustomizers(new ASTTransformationCustomizer(transformation));
 
-    Binding binding = new Binding();
+      Binding binding = new Binding();
 
-    for (String pm : DeviceManager.listConnectedDevice()) {
-      BowlerAbstractDevice device = DeviceManager.getSpecificDevice(null, pm);
+      for (String pm : DeviceManager.listConnectedDevice()) {
+        BowlerAbstractDevice device = DeviceManager.getSpecificDevice(null, pm);
 
-      binding.setVariable(
-          device.getScriptingName(),
-          Class.forName(device.getClass().getName()).cast(device));
-    }
+        binding.setVariable(
+            device.getScriptingName(),
+            Class.forName(device.getClass().getName()).cast(device));
+      }
 
-    binding.setVariable("args", args);
+      binding.setVariable("args", args);
 
-    GroovyShell shell = new GroovyShell(GroovyHelper.class.getClassLoader(), binding, cc);
-    Script script;
+      GroovyShell shell = new GroovyShell(GroovyHelper.class.getClassLoader(), binding, cc);
+      Script script;
 
-    if (String.class.isInstance(code)) {
-      script = shell.parse((String) code);
-    } else {
-      if (!File.class.isInstance(code)) {
+      if (code instanceof String) {
+        script = shell.parse((String) code);
+      } else if (code instanceof File) {
+        script = shell.parse((File) code);
+      } else {
+        compilingProperty.setValue(false);
         return null;
       }
 
-      script = shell.parse((File) code);
+      compilingProperty.setValue(false);
+
+      runningProperty.setValue(true);
+      Object result = script.run();
+      runningProperty.setValue(false);
+
+    /*Platform.runLater(() -> {
+      KTree<ASTNode> ast = new KTree<>(transformation.getTree());
+      ASTViewGenerator generator = new ASTViewGenerator();
+      Dialog dialog = new Dialog();
+      dialog.getDialogPane().setContent(generator.generateView(ast));
+      dialog.getDialogPane().getButtonTypes().add(ButtonType.OK);
+      dialog.showAndWait();
+      printTree(ast.getRoot(), "");
+    });*/
+
+      return result;
+    } finally {
+      compilingProperty.setValue(false);
+      runningProperty.setValue(false);
     }
-
-    compilingProperty.setValue(false);
-
-    runningProperty.setValue(true);
-    Object result = script.run();
-    runningProperty.setValue(false);
-
-    //    Platform.runLater(() -> {
-    //      KTree<ASTNode> ast = new KTree<>(transformation.getTree());
-    //      ASTViewGenerator generator = new ASTViewGenerator();
-    //      Dialog dialog = new Dialog();
-    //      dialog.getDialogPane().setContent(generator.generateView(ast));
-    //      dialog.getDialogPane().getButtonTypes().add(ButtonType.OK);
-    //      dialog.showAndWait();
-    //      printTree(ast.getRoot(), "");
-    //    });
-
-    return result;
   }
 
   /**
@@ -137,10 +136,6 @@ public class AwareGroovyLanguage implements IScriptingLanguage {
 
   public ReadOnlyBooleanProperty runningProperty() {
     return runningProperty;
-  }
-
-  public IDebugScriptRunner compileDebug(File file) {
-    return () -> new String[]{"fileame.groovy", "345"};
   }
 
 }

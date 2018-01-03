@@ -91,6 +91,7 @@ dependencies {
 //    compile(project(":lib/src/jbullet"))
     compile(files("jars/BowlerScriptingKernel-0.31.0.jar"))
 //    compile(group = "com.neuronrobotics", name = "BowlerScriptingKernel", version="0.29.0")
+    compile(group = "net.openhft", name = "compiler", version = "2.3.0")
 
     fun junitJupiter(name: String, version: String = "5.0.0") =
             create(group = "org.junit.jupiter", name = name, version = version)

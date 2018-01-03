@@ -1,7 +1,8 @@
 package com.neuronrobotics.bowlerbuilder.controller.scripteditor.scriptrunner;
 
 import com.google.inject.Inject;
-import com.neuronrobotics.bowlerbuilder.controller.scripteditor.groovy.AwareGroovyLanguage;
+import com.neuronrobotics.bowlerbuilder.controller.scripteditor.groovy.GroovyLanguage;
+import com.neuronrobotics.bowlerstudio.scripting.IScriptingLanguage;
 import com.neuronrobotics.bowlerstudio.scripting.ScriptingEngine;
 import java.util.ArrayList;
 import javafx.beans.property.ReadOnlyBooleanProperty;
@@ -9,13 +10,14 @@ import javafx.beans.property.ReadOnlyBooleanProperty;
 /**
  * {@link ScriptRunner} passthrough to {@link ScriptingEngine}.
  */
-public class BowlerScriptRunner implements ScriptRunner {
+public class GroovyScriptRunner implements ScriptRunner {
 
-  private final AwareGroovyLanguage language;
+  private final GroovyLanguage language;
 
   @Inject
-  public BowlerScriptRunner(AwareGroovyLanguage language) {
+  public GroovyScriptRunner(GroovyLanguage language) {
     this.language = language;
+
     ScriptingEngine.addScriptingLanguage(language);
   }
 
@@ -23,6 +25,11 @@ public class BowlerScriptRunner implements ScriptRunner {
   public Object runScript(String script, ArrayList<Object> arguments, String languageName)
       throws Exception {
     return ScriptingEngine.inlineScriptStringRun(script, arguments, languageName);
+  }
+
+  @Override
+  public IScriptingLanguage getLanguage() {
+    return language;
   }
 
   @Override

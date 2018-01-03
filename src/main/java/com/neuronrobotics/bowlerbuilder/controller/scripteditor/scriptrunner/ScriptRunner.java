@@ -1,5 +1,6 @@
 package com.neuronrobotics.bowlerbuilder.controller.scripteditor.scriptrunner;
 
+import com.neuronrobotics.bowlerstudio.scripting.IScriptingLanguage;
 import java.util.ArrayList;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 
@@ -18,6 +19,13 @@ public interface ScriptRunner {
    */
   Object runScript(String script, ArrayList<Object> arguments, String languageName)
       throws Exception;
+
+  /**
+   * Get the language this runner can run.
+   *
+   * @return language
+   */
+  IScriptingLanguage getLanguage();
 
   /**
    * Get whether the script is currently compiling.

@@ -3,7 +3,6 @@ package com.neuronrobotics.bowlerbuilder.controller;
 import com.google.common.base.Throwables;
 import com.google.common.io.Files;
 import com.google.inject.Inject;
-import com.google.inject.name.Named;
 import com.neuronrobotics.bowlerbuilder.FxUtil;
 import com.neuronrobotics.bowlerbuilder.GistUtilities;
 import com.neuronrobotics.bowlerbuilder.LoggerUtilities;
@@ -24,7 +23,9 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javafx.beans.property.IntegerProperty;
@@ -35,6 +36,8 @@ import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.SplitMenuButton;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TextField;
@@ -54,8 +57,7 @@ public class AceCadEditorController {
       LoggerUtilities.getLogger(AceCadEditorController.class.getSimpleName());
   private final ScriptEditorView scriptEditorView;
   private final ScriptEditor scriptEditor;
-  private final ScriptRunner scriptRunner;
-  private final String scriptLangName;
+  private final Map<String, ScriptRunner> scriptRunnerMap;
   private final StringClipper stringClipper;
   private final IntegerProperty fontSize;
   private final IntegerProperty maxToastLength;
@@ -64,7 +66,7 @@ public class AceCadEditorController {
   @FXML
   private BorderPane editorBorderPane;
   @FXML
-  private Button runButton;
+  private SplitMenuButton runButton;
   @FXML
   private Button publishButton;
   @FXML
@@ -82,13 +84,11 @@ public class AceCadEditorController {
   @Inject
   public AceCadEditorController(PreferencesServiceFactory preferencesServiceFactory,
                                 ScriptEditorView scriptEditorView,
-                                ScriptRunner scriptRunner,
-                                @Named("scriptLangName") String scriptLangName,
+                                Map<String, ScriptRunner> scriptRunnerMap,
                                 StringClipper stringClipper) {
     this.scriptEditorView = scriptEditorView;
     this.scriptEditor = scriptEditorView.getScriptEditor();
-    this.scriptRunner = scriptRunner;
-    this.scriptLangName = scriptLangName;
+    this.scriptRunnerMap = scriptRunnerMap;
     this.stringClipper = stringClipper;
 
     logger.info("factory: " + preferencesServiceFactory);
@@ -105,8 +105,6 @@ public class AceCadEditorController {
     maxToastLength = new SimpleIntegerProperty(preferencesService.get("Max Toast Length", 15));
     preferencesService.addListener("Max Toast Length",
         (PreferenceListener<Integer>) (oldVal, newVal) -> maxToastLength.setValue(newVal));
-
-    logger.log(Level.FINE, "Running with language: " + scriptLangName);
   }
 
   @FXML
@@ -116,15 +114,22 @@ public class AceCadEditorController {
     fileEditorRoot.setDividerPosition(0, 0.8);
 
     runButton.setGraphic(new FontAwesome().create(String.valueOf(FontAwesome.Glyph.PLAY)));
+
+    Function<String, MenuItem> makeRunItem = (String languageName) -> {
+      MenuItem item = new MenuItem(languageName);
+      item.setOnAction(__ -> runFileCallback(languageName));
+      return item;
+    };
+
+    runButton.getItems().addAll(makeRunItem.apply("Groovy"), makeRunItem.apply("Java"));
+
     publishButton.setGraphic(
         new FontAwesome().create(String.valueOf(FontAwesome.Glyph.CLOUD_UPLOAD)));
   }
 
   @FXML
   private void runFile(ActionEvent actionEvent) {
-    Thread thread = LoggerUtilities.newLoggingThread(logger, this::runEditorContent);
-    thread.setDaemon(true);
-    thread.start();
+    runFileCallback("Groovy");
   }
 
   @FXML
@@ -263,11 +268,22 @@ public class AceCadEditorController {
   }
 
   /**
+   * Callback for pressing the run button.
+   *
+   * @param language script language
+   */
+  private void runFileCallback(String language) {
+    Thread thread = LoggerUtilities.newLoggingThread(logger, () -> runEditorContent(language));
+    thread.setDaemon(true);
+    thread.start();
+  }
+
+  /**
    * Run the content inside the editor.
    *
    * @return result from the script
    */
-  public Object runEditorContent() {
+  public Object runEditorContent(String language) {
     //Grab code from FX thread
     ObjectProperty<String> text = new SimpleObjectProperty<>();
     CountDownLatch latch = new CountDownLatch(1);
@@ -278,7 +294,7 @@ public class AceCadEditorController {
 
     try {
       latch.await();
-      return runStringScript(text.get(), new ArrayList<>(), scriptLangName);
+      return runStringScript(text.get(), new ArrayList<>(), language);
     } catch (InterruptedException e) {
       logger.log(Level.WARNING,
           "CountDownLatch interrupted while waiting to get editor content.\n"
@@ -309,10 +325,11 @@ public class AceCadEditorController {
 
       //Run the code
       logger.log(Level.FINE, "Running script.");
-      Object result = scriptRunner.runScript(
+      ScriptRunner runner = scriptRunnerMap.get(languageName);
+      Object result = runner.runScript(
           script,
           arguments,
-          languageName);
+          runner.getLanguage().getShellType());
 
       logger.log(Level.FINER, "Result is: " + result);
 
@@ -379,8 +396,8 @@ public class AceCadEditorController {
     return scriptEditor;
   }
 
-  public ScriptRunner getScriptRunner() {
-    return scriptRunner;
+  public ScriptRunner getScriptRunner(String language) {
+    return scriptRunnerMap.get(language);
   }
 
 }
