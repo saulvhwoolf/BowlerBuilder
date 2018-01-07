@@ -1,5 +1,6 @@
 package com.neuronrobotics.bowlerbuilder.model;
 
+import java.util.Objects;
 import org.kohsuke.github.GHObject;
 
 public class GitItem<T extends GHObject> implements Comparable<GitItem> {
@@ -28,6 +29,26 @@ public class GitItem<T extends GHObject> implements Comparable<GitItem> {
   @Override
   public int compareTo(GitItem otherItem) {
     return displayName.compareTo(otherItem.displayName);
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+
+    GitItem<?> gitItem = (GitItem<?>) o;
+    return Objects.equals(displayName, gitItem.displayName)
+        && Objects.equals(data, gitItem.data);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(displayName, data);
   }
 
 }

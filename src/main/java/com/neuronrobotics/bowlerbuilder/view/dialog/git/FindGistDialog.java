@@ -1,13 +1,9 @@
 package com.neuronrobotics.bowlerbuilder.view.dialog.git;
 
+import com.google.common.collect.TreeMultiset;
 import com.neuronrobotics.bowlerbuilder.model.GitItem;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Map;
-import java.util.SortedSet;
-import java.util.TreeMap;
-import java.util.TreeSet;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.scene.control.ButtonType;
@@ -18,42 +14,41 @@ import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 import me.xdrop.fuzzywuzzy.FuzzySearch;
 import org.kohsuke.github.GHGist;
+import org.kohsuke.github.GHObject;
 
 public class FindGistDialog extends Dialog<GHGist> {
 
-  private ObservableList<GitItem<GHGist>> items;
-  private Map<GitItem<GHGist>, Integer> itemMap;
+  private ObservableList<RankedGitItem<GHGist>> items;
+  private List<RankedGitItem<GHGist>> gitData;
+  private TreeMultiset<RankedGitItem<GHGist>> itemSet;
 
   public FindGistDialog(Iterable<GHGist> gists) {
     super();
 
     items = FXCollections.observableArrayList();
-    itemMap = new TreeMap<>();
+    gitData = new ArrayList<>();
+    itemSet = TreeMultiset.create();
 
     gists.forEach(gist -> {
       String name = gist.getDescription();
       if (!"".equals(name)) {
-        items.add(new GitItem<>(name, gist));
+        gitData.add(new RankedGitItem<>(new GitItem<>(name, gist)));
       }
     });
 
+    items.addAll(gitData);
+
     TextField nameField = new TextField();
     nameField.setOnAction(event -> {
-      itemMap.clear();
-
-      gists.forEach(gist -> {
-        String name = gist.getDescription();
-        if (!"".equals(name)) {
-          itemMap.put(new GitItem<>(name, gist), FuzzySearch.ratio(nameField.getText(), name));
-        }
+      gitData.forEach(item -> {
+        item.setRank(FuzzySearch.ratio(nameField.getText(), item.gitItem.getDisplayName()));
+        itemSet.add(item);
       });
 
-      items.setAll(entriesSortedByValues(itemMap).stream()
-          .map(Map.Entry::getKey)
-          .collect(Collectors.toList()));
+      items.setAll(gitData);
     });
 
-    ListView<GitItem<GHGist>> listView = new ListView<>();
+    ListView<RankedGitItem<GHGist>> listView = new ListView<>();
     listView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
     listView.setItems(items);
 
@@ -64,19 +59,41 @@ public class FindGistDialog extends Dialog<GHGist> {
 
     setResultConverter(buttonType -> {
       if (buttonType.equals(ButtonType.OK)) {
-        return listView.getSelectionModel().getSelectedItem().getData();
+        return listView.getSelectionModel().getSelectedItem().gitItem.getData();
       }
 
       return null;
     });
   }
 
-  static <K, V extends Comparable<? super V>>
-  SortedSet<Map.Entry<K, V>> entriesSortedByValues(Map<K, V> map) {
-    SortedSet<Map.Entry<K, V>> sortedEntries = new TreeSet<>(
-        Collections.reverseOrder(Comparator.comparing(Map.Entry::getValue)));
-    sortedEntries.addAll(map.entrySet());
-    return sortedEntries;
+  private class RankedGitItem<T extends GHObject> implements Comparable<RankedGitItem> {
+
+    GitItem<T> gitItem;
+    Integer rank;
+
+    public RankedGitItem(GitItem<T> data) {
+      this.gitItem = data;
+    }
+
+    public RankedGitItem(GitItem<T> gitItem, Integer rank) {
+      this.gitItem = gitItem;
+      this.rank = rank;
+    }
+
+    @Override
+    public int compareTo(RankedGitItem rankedGitItem) {
+      return gitItem.compareTo(rankedGitItem.gitItem);
+    }
+
+    @Override
+    public String toString() {
+      return gitItem.toString();
+    }
+
+    public void setRank(Integer rank) {
+      this.rank = rank;
+    }
+
   }
 
 }
