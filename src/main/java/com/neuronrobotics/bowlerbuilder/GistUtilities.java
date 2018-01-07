@@ -1,5 +1,6 @@
 package com.neuronrobotics.bowlerbuilder;
 
+import com.google.common.base.Throwables;
 import com.neuronrobotics.bowlerstudio.scripting.ScriptingEngine;
 import com.neuronrobotics.sdk.util.ThreadUtil;
 import java.io.IOException;
@@ -8,6 +9,7 @@ import java.util.logging.Logger;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.kohsuke.github.GHGist;
 import org.kohsuke.github.GHGistBuilder;
+import org.kohsuke.github.GHOrganization;
 import org.kohsuke.github.GitHub;
 
 public final class GistUtilities {
@@ -38,6 +40,27 @@ public final class GistUtilities {
 
     //Make gist
     return createGistFromBuilder(builder, filename);
+  }
+
+  /**
+   * Get the name of an organization. Uses login name if description is not present.
+   *
+   * @param org organization
+   * @return organization name
+   */
+  public static String getOrganizationName(GHOrganization org) {
+    try {
+      String name = org.getName();
+      if (name == null || name.length() == 0) {
+        name = org.getLogin();
+      }
+      return name;
+    } catch (IOException e) {
+      logger.log(Level.SEVERE,
+          "Error while sanitizing organization name.\n" + Throwables.getStackTraceAsString(e));
+    }
+
+    return "";
   }
 
   /**

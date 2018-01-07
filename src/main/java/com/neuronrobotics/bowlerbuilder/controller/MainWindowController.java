@@ -8,6 +8,7 @@ import com.google.common.io.Files;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.neuronrobotics.bowlerbuilder.FxUtil;
+import com.neuronrobotics.bowlerbuilder.GistUtilities;
 import com.neuronrobotics.bowlerbuilder.LoggerUtilities;
 import com.neuronrobotics.bowlerbuilder.controller.widget.Widget;
 import com.neuronrobotics.bowlerbuilder.model.preferences.PreferencesService;
@@ -16,6 +17,7 @@ import com.neuronrobotics.bowlerbuilder.view.dialog.AddFileToGistDialog;
 import com.neuronrobotics.bowlerbuilder.view.dialog.HelpDialog;
 import com.neuronrobotics.bowlerbuilder.view.dialog.LoginDialog;
 import com.neuronrobotics.bowlerbuilder.view.dialog.PreferencesDialog;
+import com.neuronrobotics.bowlerbuilder.view.dialog.git.FindGistDialog;
 import com.neuronrobotics.bowlerbuilder.view.dialog.widget.ManageWidgetsDialog;
 import com.neuronrobotics.bowlerbuilder.view.tab.AceCadEditorTab;
 import com.neuronrobotics.bowlerstudio.assets.AssetFactory;
@@ -36,7 +38,6 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -448,6 +449,14 @@ public class MainWindowController {
    * @param gists list of gists
    */
   private void loadGistsIntoMenus(Menu menu, PagedIterable<GHGist> gists) {
+    MenuItem findItem = new MenuItem("Find Gist");
+    findItem.setOnAction(__ -> {
+      new FindGistDialog(gists).showAndWait().ifPresent(result -> {
+        System.out.println(result.getDescription());
+      });
+    });
+    menu.getItems().add(findItem);
+
     gists.forEach(gist -> {
       MenuItem showWebGist = new MenuItem("Show Gist on Web");
       showWebGist.setOnAction(event ->
@@ -532,24 +541,9 @@ public class MainWindowController {
    * @param orgs organizations
    */
   private void loadOrgsIntoMenus(Menu menu, GHPersonSet<GHOrganization> orgs) {
-    Function<GHOrganization, String> getName = org -> {
+    orgs.stream().sorted(Comparator.comparing(GistUtilities::getOrganizationName)).forEach(org -> {
       try {
-        String name = org.getName();
-        if (name == null || name.length() == 0) {
-          name = org.getLogin();
-        }
-        return name;
-      } catch (IOException e) {
-        logger.log(Level.SEVERE,
-            "Error while sanitizing organization name.\n" + Throwables.getStackTraceAsString(e));
-      }
-
-      return "";
-    };
-
-    orgs.stream().sorted(Comparator.comparing(getName)).forEach(org -> {
-      try {
-        Menu orgMenu = new Menu(getName.apply(org));
+        Menu orgMenu = new Menu(GistUtilities.getOrganizationName(org));
         org.getRepositories().forEach((key, value) -> {
           MenuItem repoMenu = new MenuItem(key);
           repoMenu.setOnAction(event -> {
