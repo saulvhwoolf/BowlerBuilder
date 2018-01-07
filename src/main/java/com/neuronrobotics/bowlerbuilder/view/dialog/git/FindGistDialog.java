@@ -1,11 +1,12 @@
 package com.neuronrobotics.bowlerbuilder.view.dialog.git;
 
+import com.google.common.collect.Ordering;
 import com.google.common.collect.TreeMultiset;
 import com.neuronrobotics.bowlerbuilder.model.GitItem;
+import com.neuronrobotics.bowlerbuilder.model.RankedGitItem;
 import java.util.ArrayList;
 import java.util.List;
 import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.ListView;
@@ -14,20 +15,20 @@ import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 import me.xdrop.fuzzywuzzy.FuzzySearch;
 import org.kohsuke.github.GHGist;
-import org.kohsuke.github.GHObject;
 
 public class FindGistDialog extends Dialog<GHGist> {
 
-  private ObservableList<RankedGitItem<GHGist>> items;
+  private ListView<RankedGitItem<GHGist>> listView;
+
   private List<RankedGitItem<GHGist>> gitData;
   private TreeMultiset<RankedGitItem<GHGist>> itemSet;
 
   public FindGistDialog(Iterable<GHGist> gists) {
     super();
 
-    items = FXCollections.observableArrayList();
+    listView = new ListView<>();
     gitData = new ArrayList<>();
-    itemSet = TreeMultiset.create();
+    itemSet = TreeMultiset.create(Ordering.natural().reverse());
 
     gists.forEach(gist -> {
       String name = gist.getDescription();
@@ -36,21 +37,22 @@ public class FindGistDialog extends Dialog<GHGist> {
       }
     });
 
-    items.addAll(gitData);
+    listView.setItems(FXCollections.observableArrayList(gitData));
 
     TextField nameField = new TextField();
     nameField.setOnAction(event -> {
+      itemSet.clear();
+
       gitData.forEach(item -> {
-        item.setRank(FuzzySearch.ratio(nameField.getText(), item.gitItem.getDisplayName()));
+        item.setRank(FuzzySearch.ratio(nameField.getText(), item.getDisplayName()));
         itemSet.add(item);
       });
 
-      items.setAll(gitData);
+      itemSet.forEach(item -> System.out.println(item.getRank()));
+      listView.setItems(FXCollections.observableArrayList(itemSet));
     });
 
-    ListView<RankedGitItem<GHGist>> listView = new ListView<>();
     listView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
-    listView.setItems(items);
 
     VBox vBox = new VBox(5, nameField, listView);
 
@@ -59,41 +61,11 @@ public class FindGistDialog extends Dialog<GHGist> {
 
     setResultConverter(buttonType -> {
       if (buttonType.equals(ButtonType.OK)) {
-        return listView.getSelectionModel().getSelectedItem().gitItem.getData();
+        return listView.getSelectionModel().getSelectedItem().getData();
       }
 
       return null;
     });
-  }
-
-  private class RankedGitItem<T extends GHObject> implements Comparable<RankedGitItem> {
-
-    GitItem<T> gitItem;
-    Integer rank;
-
-    public RankedGitItem(GitItem<T> data) {
-      this.gitItem = data;
-    }
-
-    public RankedGitItem(GitItem<T> gitItem, Integer rank) {
-      this.gitItem = gitItem;
-      this.rank = rank;
-    }
-
-    @Override
-    public int compareTo(RankedGitItem rankedGitItem) {
-      return gitItem.compareTo(rankedGitItem.gitItem);
-    }
-
-    @Override
-    public String toString() {
-      return gitItem.toString();
-    }
-
-    public void setRank(Integer rank) {
-      this.rank = rank;
-    }
-
   }
 
 }
