@@ -75,18 +75,20 @@ public class WebBrowserController {
 
               String currentGist;
               String address = lastURL;
-
-              if (!gists.isEmpty()) {
-                currentGist = gists.get(0);
-                currentGit = "https://gist.github.com/" + currentGist + ".git";
-              } else if (address.contains("https://github.com/")) {
+              if (gists.isEmpty()) {
+                logger.info("There are no gists on this pages.");
+                return;
+              }
+              if (address.contains("https://github.com/")) {
                 if (address.endsWith("/")) {
                   address = address.substring(0, address.length() - 1);
                 }
                 currentGit = address + ".git";
               } else {
-                return;
+                currentGist = gists.get(0);
+                currentGit = "https://gist.github.com/" + currentGist + ".git";
               }
+
               try {
                 List<String> files = ScriptingEngine.filesInGit(currentGit).stream()
                     .filter(item -> !item.contains("csgDatabase.json"))
@@ -101,7 +103,8 @@ public class WebBrowserController {
                 files.forEach(file -> fileBox.getItems().add(file));
                 fileBox.getSelectionModel().select(0);
               } catch (Exception e) {
-                e.printStackTrace();
+                logger.warning("Could not parse and run script.\n"
+                    + Throwables.getStackTraceAsString(e));
               }
             });
           }
@@ -159,6 +162,7 @@ public class WebBrowserController {
 
   @FXML
   private void onModify(ActionEvent actionEvent) {
+
   }
 
   public void loadPage(final String url) {
@@ -183,16 +187,18 @@ public class WebBrowserController {
             modifyButton.setGraphic(AssetFactory.loadIcon("Make-Copy-Script.png"));
           }
           try {
-            runIcon.setImage(AssetFactory.loadAsset("Script-Tab-" +
-                ScriptingEngine.getShellType(currentFile.getName() + ".png")));
+            runIcon.setImage(AssetFactory.loadAsset("Script-Tab-"
+                + ScriptingEngine.getShellType(currentFile.getName() + ".png")));
           } catch (Exception e) {
-            e.printStackTrace();
+            logger.warning("Could not load asset.\n"
+                + Throwables.getStackTraceAsString(e));
           }
 
         });
       }
     } catch (Exception e) {
-      e.printStackTrace();
+      logger.warning("Could not load script.\n"
+          + Throwables.getStackTraceAsString(e));
     }
   }
 

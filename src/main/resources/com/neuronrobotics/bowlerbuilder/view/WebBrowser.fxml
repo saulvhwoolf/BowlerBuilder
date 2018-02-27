@@ -42,9 +42,9 @@
           <padding>
             <Insets top="5.0" right="5.0" bottom="5.0" left="5.0"/>
           </padding>
-          <Button fx:id="runButton" layoutX="10.0" layoutY="10.0" onAction="#onRun"/>
+          <Button fx:id="runButton" onAction="#onRun"/>
           <ImageView fx:id="runIcon"/>
-          <Button fx:id="modifyButton" layoutX="10.0" layoutY="10.0" onAction="#onModify"/>
+          <Button fx:id="modifyButton" onAction="#onModify"/>
           <ChoiceBox fx:id="fileBox"/>
         </HBox>
       </children>
