@@ -1,10 +1,16 @@
 package com.neuronrobotics.bowlerbuilder.controller;
 
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
 import com.neuronrobotics.bowlerbuilder.FxUtil;
 import com.neuronrobotics.bowlerbuilder.LoggerUtilities;
 import com.neuronrobotics.bowlerstudio.assets.AssetFactory;
 import com.neuronrobotics.bowlerstudio.scripting.ScriptingEngine;
+import java.io.File;
+import java.util.Locale;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import javafx.application.Platform;
 import javafx.concurrent.Worker;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -15,12 +21,6 @@ import javafx.scene.image.ImageView;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
 import org.controlsfx.glyphfont.Glyph;
-
-import java.io.File;
-import java.util.List;
-import java.util.Locale;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 public class WebBrowserController {
 
@@ -66,19 +66,24 @@ public class WebBrowserController {
     webView.getEngine().getLoadWorker().stateProperty()
         .addListener((observableValue, state, t1) -> {
           if (t1.equals(Worker.State.SUCCEEDED)) {
-            FxUtil.runFX(() -> {
-              runButton.setDisable(true);
-              modifyButton.setDisable(true);
-              fileBox.getItems().clear();
+            Thread thread = LoggerUtilities.newLoggingThread(logger, () -> {
+              Platform.runLater(() -> {
+                runButton.setDisable(true);
+                modifyButton.setDisable(true);
+                fileBox.setDisable(true);
+              });
 
-              List<String> gists = ScriptingEngine.getCurrentGist(lastURL, webView.getEngine());
+              ImmutableList<String> gists = ImmutableList.copyOf(
+                  ScriptingEngine.getCurrentGist(lastURL, webView.getEngine()));
 
-              String currentGist;
+              final String currentGist;
               String address = lastURL;
               if (gists.isEmpty()) {
-                logger.info("There are no gists on this pages.");
+                logger.info("No gists found on the current page.");
                 return;
               }
+
+              //Transform the current page URL into a git URL
               if (address.contains("https://github.com/")) {
                 if (address.endsWith("/")) {
                   address = address.substring(0, address.length() - 1);
@@ -89,24 +94,37 @@ public class WebBrowserController {
                 currentGit = "https://gist.github.com/" + currentGist + ".git";
               }
 
+              logger.fine("Current git is: " + currentGit);
+
               try {
-                List<String> files = ScriptingEngine.filesInGit(currentGit).stream()
-                    .filter(item -> !item.contains("csgDatabase.json"))
-                    .collect(Collectors.toList());
+                //Load files and remove "csgDatabase.json"
+                final ImmutableList<String> files = ImmutableList.copyOf(
+                    ScriptingEngine.filesInGit(currentGit).stream()
+                        .filter(item -> !item.contains("csgDatabase.json"))
+                        .collect(Collectors.toList()));
 
-                if (!files.isEmpty()) {
+                if (files.isEmpty()) {
+                  //If there aren't files, just clear the file box
+                  Platform.runLater(() -> fileBox.getItems().clear());
+                } else {
+                  //If there are files, add them to the fileBox, re-enable the buttons, and load
+                  //the first file
                   loadGitLocal(currentGit, files.get(0));
-                  runButton.setDisable(false);
-                  modifyButton.setDisable(false);
+                  Platform.runLater(() -> {
+                    runButton.setDisable(false);
+                    modifyButton.setDisable(false);
+                    fileBox.setDisable(false);
+                    fileBox.getItems().setAll(files);
+                    fileBox.getSelectionModel().select(0);
+                  });
                 }
-
-                files.forEach(file -> fileBox.getItems().add(file));
-                fileBox.getSelectionModel().select(0);
               } catch (Exception e) {
                 logger.warning("Could not parse and run script.\n"
                     + Throwables.getStackTraceAsString(e));
               }
             });
+            thread.setDaemon(true);
+            thread.start();
           }
         });
   }
@@ -146,10 +164,10 @@ public class WebBrowserController {
   private void onRun(ActionEvent actionEvent) {
     Thread thread = LoggerUtilities.newLoggingThread(logger, () -> {
       try {
-        File currentFile = ScriptingEngine.fileFromGit(currentGit,
+        final File currentFile = ScriptingEngine.fileFromGit(currentGit,
             fileBox.getSelectionModel().getSelectedItem());
-        String name = currentFile.getName();
-        Object obj = ScriptingEngine.inlineScriptRun(currentFile, null,
+        final String name = currentFile.getName();
+        final Object obj = ScriptingEngine.inlineScriptRun(currentFile, null,
             ScriptingEngine.getShellType(name));
       } catch (Exception e) {
         logger.warning("Could not parse and run script.\n"
@@ -162,7 +180,6 @@ public class WebBrowserController {
 
   @FXML
   private void onModify(ActionEvent actionEvent) {
-
   }
 
   public void loadPage(final String url) {
@@ -172,33 +189,31 @@ public class WebBrowserController {
 
   private void loadGitLocal(String currentGit, String file) {
     try {
-      String[] code = ScriptingEngine.codeFromGit(currentGit, file);
+      final String[] code = ScriptingEngine.codeFromGit(currentGit, file);
 
       if (code != null) {
-        File currentFile = ScriptingEngine.fileFromGit(currentGit, file);
+        final File currentFile = ScriptingEngine.fileFromGit(currentGit, file);
+        final boolean isOwner = ScriptingEngine.checkOwner(currentFile);
 
-        boolean isOwnedByUser = ScriptingEngine.checkOwner(currentFile);
-        FxUtil.runFX(() -> {
-          if (isOwnedByUser) {
+        Platform.runLater(() -> {
+          if (isOwner) {
             modifyButton.setText("Edit...");
             modifyButton.setGraphic(AssetFactory.loadIcon("Edit-Script.png"));
           } else {
             modifyButton.setText("Make a Copy");
             modifyButton.setGraphic(AssetFactory.loadIcon("Make-Copy-Script.png"));
           }
+
           try {
             runIcon.setImage(AssetFactory.loadAsset("Script-Tab-"
                 + ScriptingEngine.getShellType(currentFile.getName() + ".png")));
           } catch (Exception e) {
-            logger.warning("Could not load asset.\n"
-                + Throwables.getStackTraceAsString(e));
+            logger.warning("Could not load asset.\n" + Throwables.getStackTraceAsString(e));
           }
-
         });
       }
     } catch (Exception e) {
-      logger.warning("Could not load script.\n"
-          + Throwables.getStackTraceAsString(e));
+      logger.warning("Could not load script.\n" + Throwables.getStackTraceAsString(e));
     }
   }
 
