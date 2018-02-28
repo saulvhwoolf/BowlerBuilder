@@ -2,6 +2,7 @@ package com.neuronrobotics.bowlerbuilder.controller;
 
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
+import com.google.inject.Inject;
 import com.neuronrobotics.bowlerbuilder.FxUtil;
 import com.neuronrobotics.bowlerbuilder.LoggerUtilities;
 import com.neuronrobotics.bowlerstudio.assets.AssetFactory;
@@ -21,12 +22,14 @@ import javafx.scene.image.ImageView;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
 import org.controlsfx.glyphfont.Glyph;
+import org.kohsuke.github.GHGist;
 
 public class WebBrowserController {
 
   private static final Logger logger =
       LoggerUtilities.getLogger(WebBrowserController.class.getSimpleName());
 
+  private final MainWindowController parentController;
   @FXML
   private Button backPageButton;
   @FXML
@@ -50,6 +53,11 @@ public class WebBrowserController {
 
   private String currentGit;
   private String lastURL = "";
+
+  @Inject
+  public WebBrowserController(MainWindowController parentController) {
+    this.parentController = parentController;
+  }
 
   @FXML
   protected void initialize() {
@@ -180,6 +188,30 @@ public class WebBrowserController {
 
   @FXML
   private void onModify(ActionEvent actionEvent) {
+    final String selection = fileBox.getSelectionModel().getSelectedItem();
+
+    try {
+      final String[] code = ScriptingEngine.codeFromGit(currentGit, selection);
+
+      if (code != null) {
+        final File currentFile = ScriptingEngine.fileFromGit(currentGit, selection);
+        final boolean isOwner = ScriptingEngine.checkOwner(currentFile);
+
+        if (isOwner) {
+          logger.fine("Opening file from git in editor: " + currentGit + ", " + selection);
+          final GHGist gist = ScriptingEngine.getGithub().getGist(currentGit);
+          parentController.openGistFileInEditor(gist, gist.getFile(selection));
+        } else {
+          logger.info("Forking file from git: " + currentGit);
+          final GHGist gist = ScriptingEngine.fork(ScriptingEngine.urlToGist(currentGit));
+          logger.info("Fork done.");
+
+          parentController.openGistFileInEditor(gist, gist.getFile(selection));
+        }
+      }
+    } catch (Exception e) {
+      logger.warning("Could not load script.\n" + Throwables.getStackTraceAsString(e));
+    }
   }
 
   public void loadPage(final String url) {
@@ -188,32 +220,35 @@ public class WebBrowserController {
   }
 
   private void loadGitLocal(String currentGit, String file) {
-    try {
-      final String[] code = ScriptingEngine.codeFromGit(currentGit, file);
+    final String gistID = ScriptingEngine.urlToGist(currentGit);
+    if (gistID != null) {
+      try {
+        final String[] code = ScriptingEngine.codeFromGit(gistID, file);
 
-      if (code != null) {
-        final File currentFile = ScriptingEngine.fileFromGit(currentGit, file);
-        final boolean isOwner = ScriptingEngine.checkOwner(currentFile);
+        if (code != null) {
+          final File currentFile = ScriptingEngine.fileFromGit(code[0], file);
+          final boolean isOwner = ScriptingEngine.checkOwner(currentFile);
 
-        Platform.runLater(() -> {
-          if (isOwner) {
-            modifyButton.setText("Edit...");
-            modifyButton.setGraphic(AssetFactory.loadIcon("Edit-Script.png"));
-          } else {
-            modifyButton.setText("Make a Copy");
-            modifyButton.setGraphic(AssetFactory.loadIcon("Make-Copy-Script.png"));
-          }
+          Platform.runLater(() -> {
+            if (isOwner) {
+              modifyButton.setText("Edit...");
+              modifyButton.setGraphic(AssetFactory.loadIcon("Edit-Script.png"));
+            } else {
+              modifyButton.setText("Make a Copy");
+              modifyButton.setGraphic(AssetFactory.loadIcon("Make-Copy-Script.png"));
+            }
 
-          try {
-            runIcon.setImage(AssetFactory.loadAsset("Script-Tab-"
-                + ScriptingEngine.getShellType(currentFile.getName() + ".png")));
-          } catch (Exception e) {
-            logger.warning("Could not load asset.\n" + Throwables.getStackTraceAsString(e));
-          }
-        });
+            try {
+              runIcon.setImage(AssetFactory.loadAsset("Script-Tab-"
+                  + ScriptingEngine.getShellType(currentFile.getName() + ".png")));
+            } catch (Exception e) {
+              logger.warning("Could not load asset.\n" + Throwables.getStackTraceAsString(e));
+            }
+          });
+        }
+      } catch (Exception e) {
+        logger.warning("Could not load script.\n" + Throwables.getStackTraceAsString(e));
       }
-    } catch (Exception e) {
-      logger.warning("Could not load script.\n" + Throwables.getStackTraceAsString(e));
     }
   }
 
