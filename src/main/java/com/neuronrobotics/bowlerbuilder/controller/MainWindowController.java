@@ -637,7 +637,10 @@ public class MainWindowController {
    * @param tab tab to add
    */
   public void addTab(Tab tab) {
-    FxUtil.runFX(() -> tabPane.getTabs().add(tab));
+    FxUtil.runFX(() -> {
+      tabPane.getTabs().add(tab);
+      tabPane.getSelectionModel().select(tab);
+    });
   }
 
   /**

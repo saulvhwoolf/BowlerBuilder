@@ -5,8 +5,10 @@ import com.google.common.collect.ImmutableList;
 import com.google.inject.Inject;
 import com.neuronrobotics.bowlerbuilder.FxUtil;
 import com.neuronrobotics.bowlerbuilder.LoggerUtilities;
+import com.neuronrobotics.bowlerbuilder.view.tab.AceCadEditorTab;
 import com.neuronrobotics.bowlerstudio.assets.AssetFactory;
 import com.neuronrobotics.bowlerstudio.scripting.ScriptingEngine;
+import eu.mihosoft.vrl.v3d.CSG;
 import java.io.File;
 import java.io.IOException;
 import java.util.Locale;
@@ -23,6 +25,7 @@ import javafx.scene.image.ImageView;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import org.controlsfx.glyphfont.Glyph;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.kohsuke.github.GHGist;
@@ -180,6 +183,7 @@ public class WebBrowserController {
         final String name = currentFile.getName();
         final Object obj = ScriptingEngine.inlineScriptRun(currentFile, null,
             ScriptingEngine.getShellType(name));
+        parseResult(obj);
       } catch (Exception e) {
         logger.warning("Could not parse and run script.\n"
             + Throwables.getStackTraceAsString(e));
@@ -187,6 +191,43 @@ public class WebBrowserController {
     });
     thread.setDaemon(true);
     thread.start();
+  }
+
+  /**
+   * Parse the result of a script. CSG objects get added to a CAD engine.
+   *
+   * @param result script result
+   */
+  private void parseResult(@Nullable final Object result) {
+    if (result instanceof Iterable) {
+      final Iterable<?> iterable = (Iterable) result;
+      final Object firstElement = iterable.iterator().next();
+
+      if (firstElement instanceof CSG) {
+        parseCSG((Iterable<CSG>) iterable);
+      }
+    }
+  }
+
+  /**
+   * Add CSGs to a new {@link AceCadEditorTab}.
+   *
+   * @param csgIterable CSGs to add
+   */
+  private void parseCSG(@Nonnull Iterable<CSG> csgIterable) {
+    Platform.runLater(() -> {
+      final String selection = fileBox.getSelectionModel().getSelectedItem();
+      try {
+        AceCadEditorTab tab = new AceCadEditorTab(selection);
+        tab.getController().getCADViewerController().addAllCSGs(csgIterable);
+        final GHGist gist = ScriptingEngine.getGithub()
+            .getGist(ScriptingEngine.urlToGist(currentGist));
+        tab.getController().loadGist(gist, gist.getFile(selection));
+        parentController.addTab(tab);
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    });
   }
 
   @FXML

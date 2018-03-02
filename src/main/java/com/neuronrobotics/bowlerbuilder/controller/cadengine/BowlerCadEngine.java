@@ -869,7 +869,7 @@ public class BowlerCadEngine extends Pane implements CadEngine {
   }
 
   @Override
-  public void addAllCSGs(Collection<CSG> csgs) {
+  public void addAllCSGs(Iterable<CSG> csgs) {
     csgs.forEach(this::addCSG);
   }
 

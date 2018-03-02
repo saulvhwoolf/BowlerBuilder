@@ -4,7 +4,6 @@ import com.google.inject.Inject;
 import com.neuronrobotics.bowlerbuilder.FxUtil;
 import com.neuronrobotics.bowlerbuilder.controller.cadengine.CadEngine;
 import eu.mihosoft.vrl.v3d.CSG;
-import java.util.Collection;
 import java.util.Map;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -66,7 +65,7 @@ public class CADModelViewerController {
    *
    * @param csgs List of CSGs to add
    */
-  public void addAllCSGs(Collection<CSG> csgs) {
+  public void addAllCSGs(Iterable<CSG> csgs) {
     engine.addAllCSGs(csgs);
   }
 

@@ -1,7 +1,6 @@
 package com.neuronrobotics.bowlerbuilder.controller.cadengine;
 
 import eu.mihosoft.vrl.v3d.CSG;
-import java.util.Collection;
 import java.util.Map;
 import javafx.beans.property.BooleanProperty;
 import javafx.scene.Node;
@@ -32,7 +31,7 @@ public interface CadEngine {
    *
    * @param csgs List of CSGs to add
    */
-  void addAllCSGs(Collection<CSG> csgs);
+  void addAllCSGs(Iterable<CSG> csgs);
 
   /**
    * Removes all meshes except for the background.
