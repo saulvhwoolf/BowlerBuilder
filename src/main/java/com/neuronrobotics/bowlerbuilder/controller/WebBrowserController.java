@@ -8,6 +8,7 @@ import com.neuronrobotics.bowlerbuilder.LoggerUtilities;
 import com.neuronrobotics.bowlerstudio.assets.AssetFactory;
 import com.neuronrobotics.bowlerstudio.scripting.ScriptingEngine;
 import java.io.File;
+import java.io.IOException;
 import java.util.Locale;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -21,7 +22,9 @@ import javafx.scene.control.TextField;
 import javafx.scene.image.ImageView;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
+import javax.annotation.Nonnull;
 import org.controlsfx.glyphfont.Glyph;
+import org.eclipse.jgit.api.errors.GitAPIException;
 import org.kohsuke.github.GHGist;
 
 public class WebBrowserController {
@@ -51,7 +54,7 @@ public class WebBrowserController {
   @FXML
   private ChoiceBox<String> fileBox;
 
-  private String currentGit;
+  private String currentGist;
   private String lastURL = "";
 
   @Inject
@@ -84,30 +87,30 @@ public class WebBrowserController {
               ImmutableList<String> gists = ImmutableList.copyOf(
                   ScriptingEngine.getCurrentGist(lastURL, webView.getEngine()));
 
-              final String currentGist;
-              String address = lastURL;
               if (gists.isEmpty()) {
                 logger.info("No gists found on the current page.");
                 return;
               }
 
               //Transform the current page URL into a git URL
-              if (address.contains("https://github.com/")) {
-                if (address.endsWith("/")) {
+              if (lastURL.contains("https://github.com/")) {
+                //TODO: Support normal repos
+                /*if (address.endsWith("/")) {
                   address = address.substring(0, address.length() - 1);
                 }
-                currentGit = address + ".git";
+                currentGist = address + ".git";*/
+                logger.info("Can't parse from normal repo.");
+                return;
               } else {
-                currentGist = gists.get(0);
-                currentGit = "https://gist.github.com/" + currentGist + ".git";
+                currentGist = "https://gist.github.com/" + gists.get(0) + ".git";
               }
 
-              logger.fine("Current git is: " + currentGit);
+              logger.fine("Current gist is: " + currentGist);
 
               try {
                 //Load files and remove "csgDatabase.json"
                 final ImmutableList<String> files = ImmutableList.copyOf(
-                    ScriptingEngine.filesInGit(currentGit).stream()
+                    ScriptingEngine.filesInGit(currentGist).stream()
                         .filter(item -> !item.contains("csgDatabase.json"))
                         .collect(Collectors.toList()));
 
@@ -117,7 +120,7 @@ public class WebBrowserController {
                 } else {
                   //If there are files, add them to the fileBox, re-enable the buttons, and load
                   //the first file
-                  loadGitLocal(currentGit, files.get(0));
+                  loadGitLocal(currentGist, files.get(0));
                   Platform.runLater(() -> {
                     runButton.setDisable(false);
                     modifyButton.setDisable(false);
@@ -172,7 +175,7 @@ public class WebBrowserController {
   private void onRun(ActionEvent actionEvent) {
     Thread thread = LoggerUtilities.newLoggingThread(logger, () -> {
       try {
-        final File currentFile = ScriptingEngine.fileFromGit(currentGit,
+        final File currentFile = ScriptingEngine.fileFromGit(currentGist,
             fileBox.getSelectionModel().getSelectedItem());
         final String name = currentFile.getName();
         final Object obj = ScriptingEngine.inlineScriptRun(currentFile, null,
@@ -191,64 +194,55 @@ public class WebBrowserController {
     final String selection = fileBox.getSelectionModel().getSelectedItem();
 
     try {
-      final String[] code = ScriptingEngine.codeFromGit(currentGit, selection);
+      final File currentFile = ScriptingEngine.fileFromGit(currentGist, selection);
+      //TODO: Doesn't properly detect owner
+      final Boolean isOwner = ScriptingEngine.checkOwner(currentFile);
 
-      if (code != null) {
-        final File currentFile = ScriptingEngine.fileFromGit(currentGit, selection);
-        final boolean isOwner = ScriptingEngine.checkOwner(currentFile);
+      if (isOwner) {
+        logger.fine("Opening file from git in editor: " + currentGist + ", " + selection);
+        final GHGist gist = ScriptingEngine.getGithub().getGist(currentGist);
+        parentController.openGistFileInEditor(gist, gist.getFile(selection));
+      } else {
+        logger.info("Forking file from git: " + currentGist);
+        final GHGist gist = ScriptingEngine.fork(ScriptingEngine.urlToGist(currentGist));
+        logger.info("Fork done.");
 
-        if (isOwner) {
-          logger.fine("Opening file from git in editor: " + currentGit + ", " + selection);
-          final GHGist gist = ScriptingEngine.getGithub().getGist(currentGit);
-          parentController.openGistFileInEditor(gist, gist.getFile(selection));
-        } else {
-          logger.info("Forking file from git: " + currentGit);
-          final GHGist gist = ScriptingEngine.fork(ScriptingEngine.urlToGist(currentGit));
-          logger.info("Fork done.");
-
-          parentController.openGistFileInEditor(gist, gist.getFile(selection));
-        }
+        parentController.openGistFileInEditor(gist, gist.getFile(selection));
       }
     } catch (Exception e) {
       logger.warning("Could not load script.\n" + Throwables.getStackTraceAsString(e));
     }
   }
 
-  public void loadPage(final String url) {
+  public void loadPage(@Nonnull final String url) {
     lastURL = url;
     webView.getEngine().load(url);
   }
 
-  private void loadGitLocal(String currentGit, String file) {
-    final String gistID = ScriptingEngine.urlToGist(currentGit);
-    if (gistID != null) {
-      try {
-        final String[] code = ScriptingEngine.codeFromGit(gistID, file);
+  private void loadGitLocal(@Nonnull final String currentGist, @Nonnull final String file) {
+    try {
+      final File currentFile = ScriptingEngine.fileFromGit(currentGist, file);
+      final boolean isOwner = ScriptingEngine.checkOwner(currentFile);
 
-        if (code != null) {
-          final File currentFile = ScriptingEngine.fileFromGit(code[0], file);
-          final boolean isOwner = ScriptingEngine.checkOwner(currentFile);
-
-          Platform.runLater(() -> {
-            if (isOwner) {
-              modifyButton.setText("Edit...");
-              modifyButton.setGraphic(AssetFactory.loadIcon("Edit-Script.png"));
-            } else {
-              modifyButton.setText("Make a Copy");
-              modifyButton.setGraphic(AssetFactory.loadIcon("Make-Copy-Script.png"));
-            }
-
-            try {
-              runIcon.setImage(AssetFactory.loadAsset("Script-Tab-"
-                  + ScriptingEngine.getShellType(currentFile.getName() + ".png")));
-            } catch (Exception e) {
-              logger.warning("Could not load asset.\n" + Throwables.getStackTraceAsString(e));
-            }
-          });
+      Platform.runLater(() -> {
+        if (isOwner) {
+          modifyButton.setText("Edit...");
+          modifyButton.setGraphic(AssetFactory.loadIcon("Edit-Script.png"));
+        } else {
+          modifyButton.setText("Make a Copy");
+          modifyButton.setGraphic(AssetFactory.loadIcon("Make-Copy-Script.png"));
         }
-      } catch (Exception e) {
-        logger.warning("Could not load script.\n" + Throwables.getStackTraceAsString(e));
-      }
+
+        try {
+          runIcon.setImage(AssetFactory.loadAsset("Script-Tab-"
+              + ScriptingEngine.getShellType(currentFile.getName() + ".png")));
+        } catch (Exception e) {
+          logger.warning("Could not load asset.\n" + Throwables.getStackTraceAsString(e));
+        }
+      });
+    } catch (GitAPIException | IOException e) {
+      logger.warning("Could not parse file from git: " + currentGist + ", " + file + "\n"
+          + Throwables.getStackTraceAsString(e));
     }
   }
 
