@@ -15,7 +15,9 @@ import java.util.Locale;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import javafx.application.Platform;
-import javafx.concurrent.Worker;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
+import javafx.concurrent.Worker.State;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
@@ -32,7 +34,7 @@ import org.kohsuke.github.GHGist;
 
 public class WebBrowserController {
 
-  private static final Logger logger =
+  private static final Logger LOGGER =
       LoggerUtilities.getLogger(WebBrowserController.class.getSimpleName());
 
   private final MainWindowController parentController;
@@ -57,8 +59,8 @@ public class WebBrowserController {
   @FXML
   private ChoiceBox<String> fileBox;
 
-  private String currentGist;
-  private String lastURL = "";
+  private final StringProperty currentGist = new SimpleStringProperty("currentGist");
+  private final StringProperty lastURL = new SimpleStringProperty("");
 
   @Inject
   public WebBrowserController(MainWindowController parentController) {
@@ -78,42 +80,42 @@ public class WebBrowserController {
     webView.getEngine().locationProperty().addListener((observable, oldValue, newValue) ->
         urlField.setText(newValue));
     webView.getEngine().getLoadWorker().stateProperty()
-        .addListener((observableValue, state, t1) -> {
-          if (t1.equals(Worker.State.SUCCEEDED)) {
-            Thread thread = LoggerUtilities.newLoggingThread(logger, () -> {
+        .addListener((observableValue, oldState, newState) -> {
+          if (newState.equals(State.SUCCEEDED)) {
+            final Thread thread = LoggerUtilities.newLoggingThread(LOGGER, () -> {
               Platform.runLater(() -> {
                 runButton.setDisable(true);
                 modifyButton.setDisable(true);
                 fileBox.setDisable(true);
               });
 
-              ImmutableList<String> gists = ImmutableList.copyOf(
-                  ScriptingEngine.getCurrentGist(lastURL, webView.getEngine()));
+              final ImmutableList<String> gists = ImmutableList.copyOf(
+                  ScriptingEngine.getCurrentGist(lastURL.get(), webView.getEngine()));
 
               if (gists.isEmpty()) {
-                logger.info("No gists found on the current page.");
+                LOGGER.info("No gists found on the current page.");
                 return;
               }
 
               //Transform the current page URL into a git URL
-              if (lastURL.contains("https://github.com/")) {
+              if (lastURL.get().contains("https://github.com/")) {
                 //TODO: Support normal repos
-                /*if (address.endsWith("/")) {
-                  address = address.substring(0, address.length() - 1);
-                }
-                currentGist = address + ".git";*/
-                logger.info("Can't parse from normal repo.");
+              /*if (address.endsWith("/")) {
+                address = address.substring(0, address.length() - 1);
+              }
+              currentGist = address + ".git";*/
+                LOGGER.info("Can't parse from normal repo.");
                 return;
               } else {
-                currentGist = "https://gist.github.com/" + gists.get(0) + ".git";
+                currentGist.set("https://gist.github.com/" + gists.get(0) + ".git");
               }
 
-              logger.fine("Current gist is: " + currentGist);
+              LOGGER.fine("Current gist is: " + currentGist.get());
 
               try {
                 //Load files and remove "csgDatabase.json"
                 final ImmutableList<String> files = ImmutableList.copyOf(
-                    ScriptingEngine.filesInGit(currentGist).stream()
+                    ScriptingEngine.filesInGit(currentGist.get()).stream()
                         .filter(item -> !item.contains("csgDatabase.json"))
                         .collect(Collectors.toList()));
 
@@ -123,7 +125,7 @@ public class WebBrowserController {
                 } else {
                   //If there are files, add them to the fileBox, re-enable the buttons, and load
                   //the first file
-                  loadGitLocal(currentGist, files.get(0));
+                  WebBrowserController.this.loadGitLocal(currentGist.get(), files.get(0));
                   Platform.runLater(() -> {
                     runButton.setDisable(false);
                     modifyButton.setDisable(false);
@@ -133,7 +135,7 @@ public class WebBrowserController {
                   });
                 }
               } catch (Exception e) {
-                logger.warning("Could not parse and run script.\n"
+                LOGGER.warning("Could not parse and run script.\n"
                     + Throwables.getStackTraceAsString(e));
               }
             });
@@ -176,16 +178,16 @@ public class WebBrowserController {
 
   @FXML
   private void onRun(ActionEvent actionEvent) {
-    Thread thread = LoggerUtilities.newLoggingThread(logger, () -> {
+    final Thread thread = LoggerUtilities.newLoggingThread(LOGGER, () -> {
       try {
-        final File currentFile = ScriptingEngine.fileFromGit(currentGist,
+        final File currentFile = ScriptingEngine.fileFromGit(currentGist.get(),
             fileBox.getSelectionModel().getSelectedItem());
         final String name = currentFile.getName();
         final Object obj = ScriptingEngine.inlineScriptRun(currentFile, null,
             ScriptingEngine.getShellType(name));
         parseResult(obj);
       } catch (Exception e) {
-        logger.warning("Could not parse and run script.\n"
+        LOGGER.warning("Could not parse and run script.\n"
             + Throwables.getStackTraceAsString(e));
       }
     });
@@ -214,14 +216,14 @@ public class WebBrowserController {
    *
    * @param csgIterable CSGs to add
    */
-  private void parseCSG(@Nonnull Iterable<CSG> csgIterable) {
+  private void parseCSG(@Nonnull final Iterable<CSG> csgIterable) {
     Platform.runLater(() -> {
       final String selection = fileBox.getSelectionModel().getSelectedItem();
       try {
         AceCadEditorTab tab = new AceCadEditorTab(selection);
         tab.getController().getCADViewerController().addAllCSGs(csgIterable);
         final GHGist gist = ScriptingEngine.getGithub()
-            .getGist(ScriptingEngine.urlToGist(currentGist));
+            .getGist(ScriptingEngine.urlToGist(currentGist.get()));
         tab.getController().loadGist(gist, gist.getFile(selection));
         parentController.addTab(tab);
       } catch (IOException e) {
@@ -234,36 +236,49 @@ public class WebBrowserController {
   private void onModify(ActionEvent actionEvent) {
     final String selection = fileBox.getSelectionModel().getSelectedItem();
 
+    LOGGER.fine("selection: " + selection);
+
     try {
-      final File currentFile = ScriptingEngine.fileFromGit(currentGist, selection);
+      final File currentFile = ScriptingEngine.fileFromGit(currentGist.get(), selection);
       //TODO: Doesn't properly detect owner
       final Boolean isOwner = ScriptingEngine.checkOwner(currentFile);
 
+      LOGGER.fine("currentFile: " + currentFile);
+      LOGGER.fine("isOwner: " + isOwner);
+
       if (isOwner) {
-        logger.fine("Opening file from git in editor: " + currentGist + ", " + selection);
-        final GHGist gist = ScriptingEngine.getGithub().getGist(currentGist);
+        LOGGER.fine("Opening file from git in editor: " + currentGist.get() + ", " + selection);
+        final GHGist gist = ScriptingEngine.getGithub().getGist(currentGist.get());
         parentController.openGistFileInEditor(gist, gist.getFile(selection));
       } else {
-        logger.info("Forking file from git: " + currentGist);
-        final GHGist gist = ScriptingEngine.fork(ScriptingEngine.urlToGist(currentGist));
-        logger.info("Fork done.");
+        LOGGER.info("Forking file from git: " + currentGist.get());
+        final GHGist gist = ScriptingEngine.fork(ScriptingEngine.urlToGist(currentGist.get()));
+        currentGist.set(gist.getGitPushUrl());
+        LOGGER.info("Fork Push URL: " + currentGist.get());
+        LOGGER.info("Fork done.");
 
         parentController.openGistFileInEditor(gist, gist.getFile(selection));
       }
     } catch (Exception e) {
-      logger.warning("Could not load script.\n" + Throwables.getStackTraceAsString(e));
+      LOGGER.warning("Could not load script.\n" + Throwables.getStackTraceAsString(e));
     }
   }
 
   public void loadPage(@Nonnull final String url) {
-    lastURL = url;
+    lastURL.set(url);
     webView.getEngine().load(url);
   }
 
   private void loadGitLocal(@Nonnull final String currentGist, @Nonnull final String file) {
+    LOGGER.fine("currentGist: " + currentGist);
+    LOGGER.fine("file: " + file);
+
     try {
       final File currentFile = ScriptingEngine.fileFromGit(currentGist, file);
       final boolean isOwner = ScriptingEngine.checkOwner(currentFile);
+
+      LOGGER.fine("currentFile: " + currentFile);
+      LOGGER.fine("isOwner: " + isOwner);
 
       Platform.runLater(() -> {
         if (isOwner) {
@@ -278,11 +293,11 @@ public class WebBrowserController {
           runIcon.setImage(AssetFactory.loadAsset("Script-Tab-"
               + ScriptingEngine.getShellType(currentFile.getName() + ".png")));
         } catch (Exception e) {
-          logger.warning("Could not load asset.\n" + Throwables.getStackTraceAsString(e));
+          LOGGER.warning("Could not load asset.\n" + Throwables.getStackTraceAsString(e));
         }
       });
     } catch (GitAPIException | IOException e) {
-      logger.warning("Could not parse file from git: " + currentGist + ", " + file + "\n"
+      LOGGER.warning("Could not parse file from git: " + currentGist + ", " + file + "\n"
           + Throwables.getStackTraceAsString(e));
     }
   }

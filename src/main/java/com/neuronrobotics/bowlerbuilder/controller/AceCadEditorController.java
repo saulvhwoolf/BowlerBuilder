@@ -89,7 +89,7 @@ public class AceCadEditorController {
     this.scriptLangName = scriptLangName;
     this.stringClipper = stringClipper;
 
-    logger.log(Level.FINE, "factory: " + preferencesServiceFactory);
+    logger.log(Level.FINEST, "factory: " + preferencesServiceFactory);
 
     PreferencesService preferencesService
         = preferencesServiceFactory.create("AceCadEditorController");
